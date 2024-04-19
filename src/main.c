@@ -114,51 +114,51 @@ char* format_error(char* err_str, int err, bool* needs_free)
 /**
  * @brief Returns the formatted time
  *
+ * @param[out] ps The prompt_string that will be populated
  * @param[in] fmt The format string used, see man page for strftime
- * @param[out] needs_free Whether the result should be freed
  */
-char* get_formatted_time(const char* fmt, bool* needs_free)
+void get_formatted_time(struct prompt_string* ps, const char* fmt)
 {
 	struct tm time_br;
 	time_t clock;
 	int status;
-	char* ret;
 
-	*needs_free = true;
+	ps->needs_free = true;
 
 	clock = time(NULL);
 	if (clock == -1)
 	{
-		return format_error("!TIME!", errno, needs_free);
+		ps->str = format_error("!TIME!", errno, &ps->needs_free);
+		return;
 	}
 	localtime_r(&clock, &time_br);
 
-	ret = malloc(sizeof(char) * MAX_STRFTIME_SIZE);
-	status = strftime(ret, MAX_STRFTIME_SIZE, fmt, &time_br);
+	ps->needs_free = malloc(sizeof(char) * MAX_STRFTIME_SIZE);
+	status = strftime(ps->str, MAX_STRFTIME_SIZE, fmt, &time_br);
 	if (status == 0)
 	{
-		free(ret);
-		*needs_free = false;
-		ret = "!STRFTIME!";
+		free(ps->str);
+		ps->needs_free = false;
+		ps->str = "!STRFTIME!";
+		return;
 	}
-	return ret;
+	return;
 }
 
 /**
  * @brief Returns the hostname of the system
  *
+ * @param[out] ps The prompt string to be populated
  * @param[in] to_dot Whether to return the hostname up to the first dot of the
  * full hostname
- * @param[out] needs_free Whether the result should be freed
  */
-char* get_hostname(bool to_dot, bool* needs_free)
+void get_hostname(struct prompt_string* ps, bool to_dot)
 {
 	long length;
 	int errno_temp;
-	char* ret;
 	char* dot;
 
-	*needs_free = false;
+	ps->needs_free = false;
 	errno_temp = errno;
 
 	length = sysconf(_SC_HOST_NAME_MAX);
@@ -166,136 +166,142 @@ char* get_hostname(bool to_dot, bool* needs_free)
 	{
 		if (errno == errno_temp)
 		{
-			return "!NOHOSTNAMEMAX!";
+			ps->str = "!NOHOSTNAMEMAX!";
+			return;
 		}
-		format_error("!SYSCONF!", errno, needs_free);
+		ps->str = format_error("!SYSCONF!", errno, &ps->needs_free);
+		return;
 	}
 
-	*needs_free = true;
-	ret = malloc(length * sizeof(char));
-	if (gethostname(ret, length) == -1)
+	ps->needs_free = true;
+	ps->str = malloc(length * sizeof(char));
+	if (gethostname(ps->str, length) == -1)
 	{
 		// should be impossible
-		free(ret);
-		return format_error("!GETHOSTNAME!", errno, needs_free);
+		free(ps->str);
+		ps->str = format_error("!GETHOSTNAME!", errno, &ps->needs_free);
+		return;
 	}
 	if (to_dot)
 	{
-		dot = strchr(ret, '.');
+		dot = strchr(ps->str, '.');
 		if (dot) {
 			*dot = 0;
 		}
 	}
 
-	return ret;
+	return;
 }
 
 /**
  * @brief Gets the basename of stdout
  *
- * @param[out] needs_free Whether the returned string needs to be freed
+ * @param[out] ps The prompt string to be populated
  */
-char* get_tty_basename(bool* needs_free)
+void get_tty_basename(struct prompt_string* ps)
 {
 	int status;
 	char* tty;
-	char* ret;
 
-	*needs_free = false;
+	ps->needs_free = false;
 
 	if (!isatty(STDOUT_FILENO))
 	{
-		return format_error("!ISATTY!", errno, needs_free);
+		ps->str = format_error("!ISATTY!", errno, &ps->needs_free);
+		return;
 	}
 	tty = ttyname(STDOUT_FILENO);
 	if (!tty)
 	{
-		return format_error("!TTYNAME!", errno, needs_free);
+		ps->str = format_error("!TTYNAME!", errno, &ps->needs_free);
+		return;
 	}
 	// On PATH_MAX... man page says to use MAXPATHLEN, but this is
 	// 4.2BSD/Solaris only. POSIX (SUSv2) says to use PATH_MAX or pathconf().
-	ret = malloc(PATH_MAX * sizeof(char));
-	if (!basename_r(tty, ret))
+	ps->str = malloc(PATH_MAX * sizeof(char));
+	if (!basename_r(tty, ps->str))
 	{
-		free(ret);
-		return format_error("!BASENAMER!", errno, needs_free);
+		free(ps->str);
+		ps->str = format_error("!BASENAMER!", errno, &ps->needs_free);
 	}
-	return tty;
+	return;
 }
 
 /**
  * @brief Gets the name of the parent process (usually the shell)
  *
- * @param[out] needs_free Whether the returned string needs to be freed
+ * @param[out] ps The prompt string to be populated
  */
-char* get_parent_name(bool* needs_free)
+void get_parent_name(struct prompt_string* ps)
 {
 	pid_t ppid;
 	int ret;
-	char* path;
 
-	*needs_free = true;
-	path = malloc(PROC_PIDPATHINFO_MAXSIZE * sizeof(char));
+	ps->needs_free = true;
+	ps->str = malloc(PROC_PIDPATHINFO_MAXSIZE * sizeof(char));
 	ppid = getppid();
 	// This is super platform-specific
 #ifdef __APPLE__
 	// This was hard to find
 	// There is little to no documentation about macOS's libproc, but this
 	// should work. See libproc.h for more info.
-	ret = proc_pidpath(ppid, path, PROC_PIDPATHINFO_MAXSIZE);
+	ret = proc_pidpath(ppid, ps->str, PROC_PIDPATHINFO_MAXSIZE);
 	if (ret <= 0) {
-		free(path);
-		*needs_free = false;
-		return format_error("!PROCPIDPATH!", errno, needs_free);
+		free(ps->str);
+		ps->str = format_error("!PROCPIDPATH!", errno, &ps->needs_free);
 	}
-	return path;
+	return;
 #else
-	free(path);
-	*needs_free = false;
-	return "!NOPROC!";
+	free(ps->str);
+	ps->needs_free = false;
+	ps->str = "!NOPROC!";
+	return;
 #endif
 }
 
 /**
  * @brief Gets the username
  *
- * @param[out] needs_free Whether the returned string needs to be freed
+ * @param[out] ps The prompt string to be populated
  */
-char* get_username(bool* needs_free)
+void get_username(struct prompt_string *ps)
 {
 	int bufsz, status;
 	char* buf, *username;
 	struct passwd pass, *result = NULL;
 
-	*needs_free = false;
+	ps->needs_free = false;
 	status = errno;
 	bufsz = sysconf(_SC_GETPW_R_SIZE_MAX);
 	if (bufsz == -1)
 	{
-		if (status == errno)
-			return "!NOGETPWRSIZEMAX!";
-		return format_error("!SYSCONF!", errno, needs_free);
+		ps->str = status == errno ? "!NOGETPWRSIZEMAX!"
+			: format_error("!SYSCONF!", errno, &ps->needs_free);
+		return;
 	}
 
 	buf = malloc(bufsz);
 	status = getpwuid_r(getuid(), &pass, buf, bufsz, &result);
 	if (status != 0) {
 		free(buf);
-		return format_error("!GETPWUIDR!", errno, needs_free);
+		ps->str = format_error("!GETPWUIDR!", errno, &ps->needs_free);
+		return;
 	} else if(!result) {
 		// Not found
 		free(buf);
-		return "nobody";
+		ps->str = "nobody";
+		return;
 	}
 	// Technically, since pw_name is the first field of struct passwd we could
 	// cast result to a char* and return it, but that is kind of weird.
 	// Hopefully the compiler can figure this out.
-	*needs_free = true;
-	if(!(username = strndup(pass.pw_name, PATH_MAX + 1))) {
-		*needs_free = false;
-		return "!STRNDUP!";
+	ps->needs_free = true;
+	if(!(ps->str = strndup(pass.pw_name, PATH_MAX + 1))) {
+		ps->needs_free = false;
+		ps->str = "!STRNDUP!";
 	}
-	return username;
+	free(buf);
+	return;
 }
 
 /**
@@ -348,21 +354,24 @@ int get_home_dir(char** ret)
 /**
  * @brief Gets the current working directory, abreviating $HOME with a tilde
  *
+ * @param[out] ps The prompt string to populate
  * @param[in] base Should we get the basename of the path
- * @param[out] needs_free Whether the returned string needs to be freed
  */
-char* get_pwd_tilde(bool base, bool* needs_free)
+void get_pwd_tilde(struct prompt_string* ps, bool base)
 {
 	// See comment about MAXPATHLEN
-	char* home, *match, pwd[PATH_MAX], *pwd_heap, *pwd_cur;
+	char* home, *match, pwd[PATH_MAX], *pwd_cur;
 	int status, len;
 
-	if (!getcwd(pwd, PATH_MAX))
-		return format_error("!GETCWD!", errno, needs_free);
+	if (!getcwd(pwd, PATH_MAX)) {
+		ps->str = format_error("!GETCWD!", errno, &ps->needs_free);
+		return;
+	}
 	status = get_home_dir(&home);
 	if (status < 0) {
-		*needs_free = status + 2;
-		return home;
+		ps->needs_free = status + 2;
+		ps->str = home;
+		return;
 	}
 	match = strnstr(pwd, home, PATH_MAX);
 	if (match == pwd) {
@@ -374,15 +383,16 @@ char* get_pwd_tilde(bool base, bool* needs_free)
 	}
 	if (status == HOME_DIR_ALLOC)
 		free(home);
-	len = strnlen(pwd, PATH_MAX);
-	*needs_free = true;
-	pwd_heap = malloc(len);
-	if (base && !basename_r(pwd, pwd_heap)) {
-		free(pwd_heap);
-		return format_error("!BASENAMER!", errno, needs_free);
+	len = strnlen(pwd, PATH_MAX) + 1;
+	ps->needs_free = true;
+	ps->str = malloc(len);
+	if (base && !basename_r(pwd, ps->str)) {
+		free(ps->str);
+		ps->str = format_error("!BASENAMER!", errno, &ps->needs_free);
+		return;
 	} else
-		strlcpy(pwd_heap, pwd, PATH_MAX);
-	return pwd_heap;
+		strlcpy(ps->str, pwd, PATH_MAX);
+	return;
 }
 
 /**
@@ -418,43 +428,43 @@ struct prompt_string* make_exploded_prompt(size_t* len)
 			elements[i].needs_free = false;
 			break;
 		case WeekMonthDay: // bash: %a %b %d
-			elements[i].str = get_formatted_time("%a %b %d", &elements[i].needs_free);
+			get_formatted_time(&elements[i], "%a %b %d");
 			break;
 		case StrftimeDate: // custom
-			elements[i].str = get_formatted_time(prompt[i].arg, &elements[i].needs_free);
+			get_formatted_time(&elements[i], prompt[i].arg);
 			break;
 		case HourMinuteSecond24: // bash: %H:%M:%S
-			elements[i].str = get_formatted_time("%H:%M:%S", &elements[i].needs_free);
+			get_formatted_time(&elements[i], "%H:%M:%S");
 			break;
 		case HourMinuteSecond12: // bash: %I:%M:%S
-			elements[i].str = get_formatted_time("%I:%M:%S", &elements[i].needs_free);
+			get_formatted_time(&elements[i], "%I:%M:%S");
 			break;
 		case TimeAmPm: // bash: %I:%M %p
-			elements[i].str = get_formatted_time("%I:%M %p", &elements[i].needs_free);
+			get_formatted_time(&elements[i], "%I:%M %p");
 			break;
 		case HourMinute24: // bash: %H:%M
-			elements[i].str = get_formatted_time("%H:%M", &elements[i].needs_free);
+			get_formatted_time(&elements[i], "%H:%M");
 			break;
 		case HostnameUpToDot:
-			elements[i].str = get_hostname(true, &elements[i].needs_free);
+			get_hostname(&elements[i], true);
 			break;
 		case FullHostname:
-			elements[i].str = get_hostname(false, &elements[i].needs_free);
+			get_hostname(&elements[i], false);
 			break;
 		case TtyBasename:
-			elements[i].str = get_tty_basename(&elements[i].needs_free);
+			get_tty_basename(&elements[i]);
 			break;
 		case ShellName:
-			elements[i].str = get_parent_name(&elements[i].needs_free);
+			get_parent_name(&elements[i]);
 			break;
 		case Username:
-			elements[i].str = get_username(&elements[i].needs_free);
+			get_username(&elements[i]);
 			break;
 		case PwdTrunc:
-			elements[i].str = get_pwd_tilde(false, &elements[i].needs_free);
+			get_pwd_tilde(&elements[i], false);
 			break;
 		case PwdTruncBasename:
-			elements[i].str = get_pwd_tilde(true, &elements[i].needs_free);
+			get_pwd_tilde(&elements[i], true);
 			break;
 		case UserPrompt:
 			elements[i].str = geteuid() == 0 ? "#" : "$";
