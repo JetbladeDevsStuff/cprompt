@@ -396,7 +396,7 @@ int get_home_dir(char** ret)
 void get_pwd_tilde(struct prompt_string* ps, bool base)
 {
 	// See comment about MAXPATHLEN
-	char* home, *match, pwd[PATH_MAX], *pwd_cur;
+	char* home, *match, pwd[PATH_MAX];
 	int status, len;
 
 	if (!getcwd(pwd, PATH_MAX)) {
@@ -413,9 +413,9 @@ void get_pwd_tilde(struct prompt_string* ps, bool base)
 	if (match == pwd) {
 		len = strnlen(home, PATH_MAX) - 1;
 		*pwd = '~';
-		for (pwd_cur = pwd + 1; *(pwd_cur + len); pwd_cur++)
-			*pwd_cur = *(pwd_cur + len);
-		*pwd_cur = 0;
+		for (match = pwd + 1; *(match + len); match++)
+			*match = *(match + len);
+		*match = 0;
 	}
 	if (status == HOME_DIR_ALLOC)
 		free(home);
