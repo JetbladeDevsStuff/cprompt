@@ -371,6 +371,10 @@ int get_home_dir(char** ret)
 		return err_free - 2;
 	}
 	pwbuf = malloc(pwbufsz);
+	if (!pwbuf) {
+		*ret = "!MALLOC!";
+		return HOME_DIR_FAILED_MESSAGE_NO_ALLOC;
+	}
 	status = getpwuid_r(getuid(), &pw, pwbuf, pwbufsz, &result);
 	if (status != 0) {
 		*ret = format_error("!GETPWUIDR!", errno, &err_free);
