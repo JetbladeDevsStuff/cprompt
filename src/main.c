@@ -86,6 +86,22 @@ enum home_dir_ret {
 const static int prompt_elements = sizeof(prompt) / sizeof(prompt[0]);
 
 /**
+ * Allocates or puts an error into ps
+ *
+ * @param[out] ps The prompt string to report errors to
+ * @param[in] size How many bytes to allocate
+ */
+void* malloc_or_error(struct prompt_string* ps, size_t size)
+{
+	void* ptr = malloc(size);
+	if (!ptr) {
+		ps->needs_free = false;
+		ps->str = "!MALLOC!";
+	}
+	return ptr;
+}
+
+/**
  * @brief Formats an error
  *
  * @param[in] err_str The default message to use if strerrorname_np is not available
@@ -101,6 +117,10 @@ char* format_error(char* err_str, int err, bool* needs_free)
 	*needs_free = true;
 	length = 2 + strnlen(strerrorname_np(err), 20); // no error is longer than 20 right?
 	ret = malloc(length * sizeof(char));
+	if (!ret) {
+		*needs_free = false;
+		return err_str;
+	}
 	strlcpy(ret, "!", length);
 	strlcat(ret, strerrorname_np(err), length);
 	strlcat(ret, "!", length);
@@ -133,7 +153,10 @@ void get_formatted_time(struct prompt_string* ps, const char* fmt)
 	}
 	localtime_r(&clock, &time_br);
 
-	ps->needs_free = malloc(sizeof(char) * MAX_STRFTIME_SIZE);
+	ps->str = malloc_or_error(ps, sizeof(char) * MAX_STRFTIME_SIZE);
+	if (!ps->str) {
+		return;
+	}
 	status = strftime(ps->str, MAX_STRFTIME_SIZE, fmt, &time_br);
 	if (status == 0)
 	{
@@ -174,7 +197,10 @@ void get_hostname(struct prompt_string* ps, bool to_dot)
 	}
 
 	ps->needs_free = true;
-	ps->str = malloc(length * sizeof(char));
+	ps->str = malloc_or_error(ps, length * sizeof(char));
+	if (!ps->str) {
+		return;
+	}
 	if (gethostname(ps->str, length) == -1)
 	{
 		// should be impossible
@@ -218,7 +244,11 @@ void get_tty_basename(struct prompt_string* ps)
 	}
 	// On PATH_MAX... man page says to use MAXPATHLEN, but this is
 	// 4.2BSD/Solaris only. POSIX (SUSv2) says to use PATH_MAX or pathconf().
-	ps->str = malloc(PATH_MAX * sizeof(char));
+	ps->needs_free = true;
+	ps->str = malloc_or_error(ps, PATH_MAX * sizeof(char));
+	if (!ps->str) {
+		return;
+	}
 	if (!basename_r(tty, ps->str))
 	{
 		free(ps->str);
@@ -238,7 +268,10 @@ void get_parent_name(struct prompt_string* ps)
 	int ret;
 
 	ps->needs_free = true;
-	ps->str = malloc(PROC_PIDPATHINFO_MAXSIZE * sizeof(char));
+	ps->str = malloc_or_error(ps, PROC_PIDPATHINFO_MAXSIZE * sizeof(char));
+	if (!ps->str) {
+		return;
+	}
 	ppid = getppid();
 	// This is super platform-specific
 #ifdef __APPLE__
@@ -280,7 +313,10 @@ void get_username(struct prompt_string *ps)
 		return;
 	}
 
-	buf = malloc(bufsz);
+	buf = malloc_or_error(ps, bufsz);
+	if (!buf) {
+		return;
+	}
 	status = getpwuid_r(getuid(), &pass, buf, bufsz, &result);
 	if (status != 0) {
 		free(buf);
@@ -385,7 +421,10 @@ void get_pwd_tilde(struct prompt_string* ps, bool base)
 		free(home);
 	len = strnlen(pwd, PATH_MAX) + 1;
 	ps->needs_free = true;
-	ps->str = malloc(len);
+	ps->str = malloc_or_error(ps, len);
+	if (!ps->str) {
+		return;
+	}
 	if (base && !basename_r(pwd, ps->str)) {
 		free(ps->str);
 		ps->str = format_error("!BASENAMER!", errno, &ps->needs_free);
