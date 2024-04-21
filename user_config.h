@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT
- * Copyright (c) 2023 Terence Noone
+ * Copyright (c) 2024 Terence Noone
  */
 
 /* User configuration file for cprompt

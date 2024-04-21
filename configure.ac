@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2023 Terence Noone
+# Copyright (c) 2024 Terence Noone
 
 AC_PREREQ([2.71])
 AC_INIT([cprompt], [0.1], [me@techtricity.net], [cprompt], [https://techtricity.net/cprompt])
